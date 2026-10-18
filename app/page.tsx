@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 const HEARD_MS = 5 * 60 * 1000; // Album gilt ab 5 Min. Wiedergabe im Verlauf als gehört
 const TRACK_MS = 30 * 1000; // Song gilt ab 30 s Wiedergabe als gehört
@@ -58,6 +58,16 @@ type Track = { id: string; name: string; sub: string; img: string; url: string }
 type Pl = { id: string; name: string; owner: string; img: string; url: string };
 type Hist = Record<string, { ms: number; last: string }>;
 const toPl = (p: any): Pl => ({ id: p.id, name: p.name, owner: p.owner?.display_name ?? "", img: p.images?.[0]?.url ?? "", url: p.external_urls?.spotify ?? "" });
+// Am Handy/iPad direkt die Spotify-App öffnen (spotify:-Link), sonst nach 2 s die Webseite als Rückfall
+const isTouch = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+function openInSpotify(e: MouseEvent, kind: "album" | "track", id: string, url: string) {
+  e.stopPropagation();
+  if (!isTouch()) return; // Desktop: normaler Link
+  e.preventDefault();
+  const t = window.setTimeout(() => { window.location.href = url; }, 2200);
+  document.addEventListener("visibilitychange", () => window.clearTimeout(t), { once: true });
+  window.location.href = `spotify:${kind}:${id}`;
+}
 const day = (s?: string) => (s ? new Date(s).toLocaleDateString("de-DE") : "");
 
 export default function Home() {
@@ -381,7 +391,7 @@ export default function Home() {
                 <b>{a.name}</b>
                 <small>{last ? "Zuletzt: " + day(last) : sv ? "In Bibliothek gespeichert" : a.date}</small>
               </div>
-              <a className="btn" href={a.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>In Spotify öffnen</a>
+              <a className="btn" href={a.url} target="_blank" rel="noopener noreferrer" onClick={(e) => openInSpotify(e, "album", a.id, a.url)}>In Spotify öffnen</a>
             </article>
           ))}
         </div>
@@ -394,7 +404,7 @@ export default function Home() {
               {t.img ? <img src={t.img} alt="" loading="lazy" /> : <span className="ph" />}
               <span className="t"><b>{t.name}</b><small>{t.sub}{last ? " · zuletzt " + day(last) : ""}</small></span>
               <span className={"badge inline " + (heard ? "heard" : "open")}>{heard ? "gehört" : "offen"}</span>
-              <a className="btn" href={t.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>Öffnen</a>
+              <a className="btn" href={t.url} target="_blank" rel="noopener noreferrer" onClick={(e) => openInSpotify(e, "track", t.id, t.url)}>Öffnen</a>
             </div>
           ))}
           {shownT.length > shownN && <button className="ghost" onClick={() => setShownN((n) => n + SHOW_STEP)}>Mehr anzeigen ({shownT.length - shownN} weitere)</button>}
