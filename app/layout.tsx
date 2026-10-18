@@ -34,6 +34,10 @@ input[type=text]{width:100%;padding:10px;border:1px solid var(--line);border-rad
 .meta{padding:10px 10px 6px;flex:1}.meta b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:600}
 .meta small{color:var(--mute)}
 .btn{display:block;margin:0 10px 10px;text-align:center;font-size:.85rem;padding:7px 8px;border:1px solid var(--line);border-radius:8px;color:var(--ink);text-decoration:none}
+.trow{display:flex;gap:10px;align-items:center;padding:8px 10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer}
+.trow img,.trow .ph{width:44px;height:44px;border-radius:6px;object-fit:cover;background:var(--line);flex:none}.trow .t{flex:1;min-width:0}
+.trow .t b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}.trow .t small{color:var(--mute)}
+.trow .btn{margin:0;white-space:nowrap}.is-heard.trow{opacity:.65}.badge.inline{position:static;display:inline-block}
 button:focus-visible,input:focus-visible,a:focus-visible,.file:focus-within{outline:2px solid var(--red);outline-offset:2px}
 `;
 

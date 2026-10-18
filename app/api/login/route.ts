@@ -10,7 +10,7 @@ export async function GET() {
     response_type: "code",
     client_id: process.env.SPOTIFY_CLIENT_ID!,
     redirect_uri: process.env.SPOTIFY_REDIRECT_URI!,
-    scope: "user-library-read user-read-recently-played",
+    scope: "user-library-read user-read-recently-played playlist-read-private playlist-read-collaborative",
     state,
   }).toString();
   return NextResponse.redirect(url);

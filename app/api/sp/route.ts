@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAccessToken } from "@/lib/spotify";
 
 // Schlanker Proxy: das Frontend ruft nur erlaubte Spotify-Pfade auf, das Token bleibt serverseitig.
-const ALLOWED = ["/me/albums", "/me/player/recently-played", "/search", "/artists/", "/albums"];
+const ALLOWED = ["/me/albums", "/me/playlists", "/me/player/recently-played", "/search", "/artists/", "/albums", "/playlists/"];
 
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams.get("p") ?? "";
