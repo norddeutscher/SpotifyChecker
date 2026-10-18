@@ -10,11 +10,23 @@ const load = <T,>(k: string, d: T): T => {
 };
 const save = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
-// Bei Fehler 429 (zu viele Anfragen) wartet die App die von Spotify genannte Zeit und versucht es erneut.
-async function sp(p: string, tries = 4): Promise<any> {
+let notify: (m: string) => void = () => {};
+const msg = (e: any, what: string) => {
+  const m = String(e.message);
+  if (!m.startsWith("429")) return `${what} (${m}).`;
+  const min = Math.max(1, Math.ceil((Number(m.split(":")[1]) || 60) / 60));
+  return `Spotify bremst die App gerade. Bitte in ca. ${min} Min. auf „Neu laden“ tippen.`;
+};
+
+// Bei Fehler 429 (zu viele Anfragen) wartet die App kurz, sonst meldet sie die Wartezeit.
+async function sp(p: string, tries = 3): Promise<any> {
   const r = await fetch("/api/sp?p=" + encodeURIComponent(p));
-  if (r.status === 429 && tries > 0) {
-    await sleep((Math.min(Number(r.headers.get("Retry-After")) || 2, 30) + 0.5) * 1000);
+  if (r.status === 429) {
+    const ra = Number(r.headers.get("Retry-After")) || 2;
+    if (tries === 0 || ra > 90) throw new Error("429:" + ra);
+    notify(`Spotify bremst kurz – weiter in ${Math.ceil(ra)} s …`);
+    await sleep((ra + 0.5) * 1000);
+    notify("");
     return sp(p, tries - 1);
   }
   if (!r.ok) throw new Error(String(r.status));
@@ -49,11 +61,12 @@ export default function Home() {
   const [view, setView] = useState<"all" | "open" | "heard">("all");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [note, setNote] = useState("");
 
   async function fetchAlbums(id: string, force = false) {
     setErr("");
     const c = load<{ t: number; a: Album[] } | null>("albums:" + id, null);
-    if (c && !force && Date.now() - c.t < CACHE_DAYS * 864e5) { setAlbums(c.a); return; }
+    if (c && c.a.length && !force && Date.now() - c.t < CACHE_DAYS * 864e5) { setAlbums(c.a); return; }
     setBusy(true);
     try {
       const path = `/artists/${id}/albums?include_groups=album&market=DE`;
@@ -66,34 +79,39 @@ export default function Home() {
         .sort((x, y) => x.release_date.localeCompare(y.release_date) || x.name.localeCompare(y.name))
         .map((x) => ({ id: x.id, name: x.name, date: x.release_date, img: x.images?.[1]?.url ?? x.images?.[0]?.url ?? "", url: x.external_urls?.spotify ?? "" }));
       setAlbums(a);
-      save("albums:" + id, { t: Date.now(), a });
+      if (a.length) save("albums:" + id, { t: Date.now(), a });
+      else setErr("Spotify hat zu diesem Interpreten keine Alben geliefert. Wähle ihn ggf. nochmal über die Suche.");
     } catch (e: any) {
-      setErr(e.message === "429"
-        ? "Spotify bremst gerade (zu viele Anfragen). Bitte in ein bis zwei Minuten auf „Neu laden“ tippen."
-        : "Alben konnten nicht geladen werden (" + e.message + ").");
+      setErr(msg(e, "Alben konnten nicht geladen werden"));
     }
     setBusy(false);
   }
 
   useEffect(() => {
+    notify = setNote;
     setTheme(document.documentElement.dataset.theme || "light");
     setHist(load("hist", {})); setManual(load("manual", [])); setFilter(load("filter", ""));
     const s = load<{ id: string; name: string } | null>("series", null);
     setSeries(s);
     (async () => {
+      // Login prüfen und letzte Wiedergaben holen (Fehler hier stoppen das Laden der Alben nicht)
       try {
-        const lib = await all("/me/albums", 50);
-        setSaved(new Set(lib.map((x) => x.album.id)));
         const rp = await sp("/me/player/recently-played?limit=50");
         const m: Record<string, string> = {};
         for (const it of rp.items) { const id = it.track.album.id; if (!m[id] || it.played_at > m[id]) m[id] = it.played_at; }
         setRecent(m);
-        setAuth("in");
-        if (s) fetchAlbums(s.id);
       } catch (e: any) {
-        setAuth(e.message === "401" ? "out" : "in");
-        if (e.message !== "401") setErr("Fehler beim Laden: " + e.message);
+        if (e.message === "401") { setAuth("out"); return; }
       }
+      setAuth("in");
+      if (s) await fetchAlbums(s.id);
+      // gespeicherte Alben: nur 1x pro Tag abrufen
+      const cs = load<{ t: number; ids: string[] } | null>("saved", null);
+      if (cs && Date.now() - cs.t < 864e5) setSaved(new Set(cs.ids));
+      else try {
+        const ids = (await all("/me/albums", 50)).map((x) => x.album.id);
+        setSaved(new Set(ids)); save("saved", { t: Date.now(), ids });
+      } catch {}
     })();
   }, []);
 
@@ -189,6 +207,7 @@ export default function Home() {
       </section>
 
       {busy && <p className="hint">Lädt Alben …</p>}
+      {note && <p className="hint">{note}</p>}
       {!series && <p className="hint">Such oben nach einer Reihe, z. B. „Die drei ???“, und tipp auf „Wählen“.</p>}
 
       {rows.length > 0 && (
