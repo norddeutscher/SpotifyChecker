@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
-export const metadata = { title: "Hörspiel-Tracker" };
-export const viewport = { width: "device-width", initialScale: 1 };
+export const metadata = { title: "Hörspiel-Tracker", manifest: "/manifest.webmanifest", icons: { icon: "/icon-192.png", apple: "/apple-touch-icon.png" }, appleWebApp: { capable: true, title: "Hörspiele", statusBarStyle: "black-translucent" as const } };
+export const viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" as const, themeColor: "#0e1320" };
 
 const theme = `(function(){try{var t=localStorage.getItem('theme');if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t}catch(e){}})()`;
 
@@ -39,6 +39,33 @@ input[type=text]{width:100%;padding:10px;border:1px solid var(--line);border-rad
 .trow .t b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}.trow .t small{color:var(--mute)}
 .trow .btn{margin:0;white-space:nowrap}.is-heard.trow{opacity:.65}.badge.inline{position:static;display:inline-block}
 button:focus-visible,input:focus-visible,a:focus-visible,.file:focus-within{outline:2px solid var(--red);outline-offset:2px}
+main{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+button,.btn{min-height:44px}.btn{padding:11px 8px}
+.top{padding-top:env(safe-area-inset-top)}
+.subject{width:100%;display:flex;justify-content:space-between;align-items:center;text-align:left;margin:0 0 14px}
+.err{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.hero{display:flex;align-items:center;gap:18px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+.ring{position:relative;width:104px;height:104px;flex:none}.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring b{position:absolute;inset:0;display:grid;place-items:center;font:700 1.5rem Georgia,serif}
+.ring .bg{stroke:var(--line)}.ring .fg{stroke:var(--green);transition:stroke-dashoffset .6s}
+.hero .txt{display:flex;flex-direction:column;gap:2px}.hero .txt b{font-size:1.25rem}
+.next{display:flex;gap:16px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:14px}
+.next img,.next .ph{width:120px;height:120px;border-radius:10px;object-fit:cover;flex:none;background:var(--line)}
+.next .info{display:flex;flex-direction:column;gap:8px;min-width:0;justify-content:center;align-items:flex-start}.next h2{margin:0;font:700 1.15rem/1.25 Georgia,serif}
+.primary{background:var(--red);color:var(--on);text-decoration:none;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;padding:11px 14px;font-weight:600;min-height:44px}
+.filters{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:8px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+select{font:inherit;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--field);color:var(--ink);min-height:44px}
+.num{position:absolute;left:8px;bottom:8px;font:700 .95rem Georgia,serif;padding:2px 8px;border-radius:6px;background:var(--bg);color:var(--ink)}
+button.cover{padding:0;border-radius:0;background:var(--line);width:100%;display:block;color:inherit}button.cover:disabled{cursor:default;opacity:1}
+.tmain{display:flex;flex:1;min-width:0;gap:10px;align-items:center;background:none;color:inherit;padding:0;text-align:left;border-radius:8px}.tmain:disabled{opacity:1;cursor:default}.trow{cursor:default}
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;gap:6px;background:var(--surface);border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
+.tabs button{flex:1;background:none;color:var(--mute);min-height:48px;font-weight:600}.tabs button.on{background:none;color:var(--red);box-shadow:inset 0 3px 0 var(--red)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));z-index:30;display:flex;gap:12px;align-items:center;background:var(--ink);color:var(--bg);padding:6px 6px 6px 16px;border-radius:10px}
+.toast button{background:none;color:var(--bg);text-decoration:underline;padding:6px 10px;min-height:36px}
+.sk .cover{animation:pulse 1.4s ease-in-out infinite}@keyframes pulse{50%{opacity:.45}}
+.ban{text-align:center;padding:36px 16px}.ban h2{font:700 1.4rem Georgia,serif;margin:0 0 10px}
+@media(max-width:480px){.next img,.next .ph{width:96px;height:96px}}
+@media(prefers-reduced-motion:reduce){.sk .cover{animation:none}.ring .fg{transition:none}}
 `;
 
 export default function RootLayout({ children }: { children: ReactNode }) {

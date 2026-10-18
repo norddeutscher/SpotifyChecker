@@ -68,6 +68,10 @@ function openInSpotify(e: MouseEvent, kind: "album" | "track", id: string, url: 
   document.addEventListener("visibilitychange", () => window.clearTimeout(t), { once: true });
   window.location.href = `spotify:${kind}:${id}`;
 }
+const EP = /^\s*(\d{1,3})\s*\/\s*/;
+const epNum = (n: string) => n.match(EP)?.[1];
+const clean = (n: string) => n.replace(EP, "");
+type Pick = { id: string; title: string; sub: string; img: string; url: string; kind: "album" | "track" };
 const day = (s?: string) => (s ? new Date(s).toLocaleDateString("de-DE") : "");
 
 export default function Home() {
@@ -96,6 +100,13 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
+  const [openManual, setOpenManual] = useState<boolean | null>(null);
+  const [nextId, setNextId] = useState<string | null>(null);
+  const [sort, setSort] = useState<"date" | "title" | "last">("date");
+  const [toast, setToast] = useState<{ id: string; text: string } | null>(null);
+  const [ban, setBan] = useState(0);
+  const [, setTick] = useState(0);
+  const toastT = useRef(0);
   const stop = useRef(false);
   const savedTried = useRef(false);
 
@@ -142,6 +153,8 @@ export default function Home() {
     setHist(load("hist", {})); setHistT(load("histT", {})); setManual(load("manual", []));
     setFilter(load("filter", "")); setTfilter(load("tfilter", "")); setMode(load("mode", "albums"));
     setSeries(load("series", null));
+    const b = Number(localStorage.getItem("blockedUntil") || 0);
+    if (b > Date.now()) setBan(b);
     (async () => {
       try {
         const rp = await sp("/me/player/recently-played?limit=50");
@@ -172,6 +185,20 @@ export default function Home() {
     setATracks(m);
   }, [mode, albums]);
 
+  // Sperre durch Spotify erkennen, Restzeit mitlaufen lassen und danach automatisch neu laden
+  useEffect(() => {
+    const b = Number(localStorage.getItem("blockedUntil") || 0);
+    setBan(b > Date.now() ? b : 0);
+  }, [err]);
+  useEffect(() => {
+    if (!ban) return;
+    const id = setInterval(() => {
+      setTick((t) => t + 1);
+      if (Date.now() > ban) { setBan(0); setErr(""); if (series && mode !== "playlists") fetchAlbums(series.id); }
+    }, 20000);
+    return () => clearInterval(id);
+  }, [ban]);
+
   function flipTheme() {
     const t = theme === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = t;
@@ -179,7 +206,7 @@ export default function Home() {
     setTheme(t);
   }
   function changeMode(m: Mode) {
-    setMode(m); save("mode", m); setFound([]); setPlists([]); setErr(""); setView("all"); setShownN(SHOW_STEP); setQ("");
+    setOpenManual(null); setNextId(null); setMode(m); save("mode", m); setFound([]); setPlists([]); setErr(""); setView("all"); setShownN(SHOW_STEP); setQ("");
   }
   async function search() {
     setErr("");
@@ -197,10 +224,10 @@ export default function Home() {
   }
   function pick(a: any) {
     const s = { id: a.id, name: a.name };
-    setSeries(s); save("series", s); setFound([]); setAlbums([]);
+    setSeries(s); save("series", s); setFound([]); setAlbums([]); setOpenManual(false); setNextId(null);
   }
   async function pickPl(p: Pl) {
-    setPl(p); setPlists([]); setPlTracks([]); setErr(""); setShownN(SHOW_STEP);
+    setPl(p); setPlists([]); setOpenManual(false); setNextId(null); setPlTracks([]); setErr(""); setShownN(SHOW_STEP);
     const c = load<{ t: number; a: Track[] } | null>("pl:" + p.id, null);
     if (c && c.a.length && Date.now() - c.t < 864e5) { setPlTracks(c.a); return; }
     setBusy(true);
@@ -263,9 +290,14 @@ export default function Home() {
     setHist(h); setHistT(t);
     if (!save("hist", h) || !save("histT", t)) setErr("Der Verlauf ist zu groß für den Browser-Speicher und gilt nur, solange die Seite offen bleibt.");
   }
-  function toggle(id: string) {
-    const m = manual.includes(id) ? manual.filter((x) => x !== id) : [...manual, id];
+  function toggle(id: string, quiet = false) {
+    const on = !manual.includes(id);
+    const m = on ? [...manual, id] : manual.filter((x) => x !== id);
     setManual(m); save("manual", m);
+    if (quiet) return;
+    setToast({ id, text: on ? "Als gehört markiert" : "Markierung entfernt" });
+    window.clearTimeout(toastT.current);
+    toastT.current = window.setTimeout(() => setToast(null), 5000);
   }
 
   const rows = useMemo(() => fAlbums.map((a) => {
@@ -294,17 +326,55 @@ export default function Home() {
   const shownA = rows.filter((r) => keep(r.heard));
   const shownT = trackRows.filter((r) => keep(r.heard));
 
+  const numbered = rows.length > 0 && rows.filter((r) => EP.test(r.a.name)).length > rows.length / 2;
+  const unit = mode === "albums" ? (numbered ? "Folgen" : "Alben") : "Songs";
+  const one = unit === "Folgen" ? "Folge" : unit === "Alben" ? "Album" : "Song";
+  const listA = sort === "title" ? [...shownA].sort((x, y) => x.a.name.localeCompare(y.a.name, "de", { numeric: true })) : sort === "last" ? [...shownA].sort((x, y) => (y.last ?? "").localeCompare(x.last ?? "")) : shownA;
+  const listT = sort === "title" ? [...shownT].sort((x, y) => x.t.name.localeCompare(y.t.name, "de", { numeric: true })) : sort === "last" ? [...shownT].sort((x, y) => (y.last ?? "").localeCompare(x.last ?? "")) : shownT;
+  const pool: Pick[] = mode === "albums"
+    ? rows.filter((r) => !r.heard).map((r) => ({ id: r.a.id, title: clean(r.a.name), sub: epNum(r.a.name) ? "Folge " + Number(epNum(r.a.name)) : r.a.date.slice(0, 4), img: r.a.img, url: r.a.url, kind: "album" as const }))
+    : trackRows.filter((r) => !r.heard).map((r) => ({ id: r.t.id, title: r.t.name, sub: r.t.sub, img: r.t.img, url: r.t.url, kind: "track" as const }));
+  const nextItem = pool.find((x) => x.id === nextId) ?? pool[0];
+  const settingsOpen = openManual ?? !(mode === "playlists" ? pl : series);
+  const subject = mode === "playlists" ? pl?.name : series?.name;
+  const modeName = { albums: "Alben", songs: "Songs", playlists: "Playlists" };
+  const C = 2 * Math.PI * 44;
+
+  const header = (
+    <header className="top">
+      <h1>Hörspiel-Tracker</h1>
+      <div className="acts">
+        <button className="ghost" onClick={flipTheme}>{theme === "dark" ? "Hell" : "Dunkel"}</button>
+        {auth === "in" && <button className="ghost" onClick={async () => { await fetch("/api/logout", { method: "POST" }); setAuth("out"); }}>Abmelden</button>}
+      </div>
+    </header>
+  );
+
   if (auth === "?") return <main><p>Lädt …</p></main>;
   if (auth === "out")
     return (
       <main>
-        <header className="top"><h1>Hörspiel-Tracker</h1><button className="ghost" onClick={flipTheme}>{theme === "dark" ? "Hell" : "Dunkel"}</button></header>
+        {header}
         <section className="panel">
           <p>Zeigt dir, welche Alben, Songs und Playlists du auf Spotify schon gehört hast.</p>
           <a href="/api/login"><button>Mit Spotify anmelden</button></a>
         </section>
       </main>
     );
+  if (ban > Date.now()) {
+    const mins = Math.ceil((ban - Date.now()) / 60000);
+    return (
+      <main>
+        {header}
+        <section className="ban panel">
+          <h2>Spotify macht gerade Pause</h2>
+          <p>Spotify begrenzt für kurze Zeit die Anfragen dieser App. Das liegt nicht an dir, und nichts ist kaputt.</p>
+          <p>Weiter geht es in {Math.floor(mins / 60)} Std. {mins % 60} Min. (gegen {new Date(ban).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr). Die Seite lädt dann von selbst.</p>
+          <p className="hint">Dein importierter Verlauf und deine Markierungen bleiben gespeichert.</p>
+        </section>
+      </main>
+    );
+  }
 
   const hints = {
     albums: "Alle Alben eines Interpreten. Gehört = Wiedergabe im Verlauf oder zuletzt gespielt.",
@@ -314,45 +384,69 @@ export default function Home() {
 
   return (
     <main>
-      <header className="top">
-        <h1>Hörspiel-Tracker</h1>
-        <div className="acts">
-          <button className="ghost" onClick={flipTheme}>{theme === "dark" ? "Hell" : "Dunkel"}</button>
-          <button className="ghost" onClick={async () => { await fetch("/api/logout", { method: "POST" }); setAuth("out"); }}>Abmelden</button>
+      {header}
+      <button className="ghost subject" onClick={() => setOpenManual(!settingsOpen)} aria-expanded={settingsOpen}>
+        <span><b>{subject ?? "Noch nichts gewählt"}</b> · {modeName[mode]}</span>
+        <span>{settingsOpen ? "Einklappen" : "Ändern"}</span>
+      </button>
+      {err && (
+        <div className="err">
+          <span>{err}</span>
+          {series && mode !== "playlists" && <button className="ghost" onClick={() => fetchAlbums(series.id, true)}>Erneut versuchen</button>}
         </div>
-      </header>
-      {err && <p className="err">{err}</p>}
+      )}
 
-      <section className="panel">
-        <div className="field" style={{ gridColumn: "1 / -1" }}>
-          <span className="l">Was möchtest du prüfen?</span>
-          <div className="bar">
-            {(["albums", "songs", "playlists"] as const).map((m) => (
-              <button key={m} className={mode === m ? "on" : "ghost"} onClick={() => changeMode(m)}>{{ albums: "Alben", songs: "Songs", playlists: "Playlists" }[m]}</button>
-            ))}
+      {settingsOpen && (
+        <section className="panel">
+          <p className="hint" style={{ gridColumn: "1 / -1" }}>{hints[mode]}</p>
+          <div className="field">
+            <span className="l">{mode === "playlists" ? "Playlist suchen" : "Interpret suchen"}</span>
+            <div className="bar">
+              <input type="text" placeholder={mode === "playlists" ? "z. B. Hörspiele" : "z. B. Die drei ???"} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()} />
+              <button onClick={search}>Suchen</button>
+            </div>
+            {found.map((a) => (<div className="pick" key={a.id}><span>{a.name}</span><button className="ghost" onClick={() => pick(a)}>Wählen</button></div>))}
+            {plists.map((p) => (<div className="pick" key={p.id}><span>{p.name}<br /><small className="hint">{p.owner}</small></span><button className="ghost" onClick={() => pickPl(p)}>Wählen</button></div>))}
           </div>
-          <p className="hint">{hints[mode]}</p>
-        </div>
-        <div className="field">
-          <span className="l">{mode === "playlists" ? `Playlist: ${pl?.name ?? "noch keine gewählt"}` : `Interpret: ${series?.name ?? "noch keiner gewählt"}`}</span>
-          <div className="bar">
-            <input type="text" placeholder={mode === "playlists" ? "Playlist suchen, z. B. Hörspiele" : "Interpret suchen, z. B. Die drei ???"} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()} />
-            <button onClick={search}>Suchen</button>
+          <div className="field">
+            <span className="l">Filter und Verlauf</span>
+            {mode !== "playlists" && <input type="text" placeholder="Albumtitel enthält, z. B. Folge" value={filter} onChange={(e) => { setFilter(e.target.value); save("filter", e.target.value); }} />}
+            {mode !== "albums" && <input type="text" placeholder="Songtitel enthält …" value={tfilter} onChange={(e) => { setTfilter(e.target.value); save("tfilter", e.target.value); setShownN(SHOW_STEP); }} />}
+            <label className="file">Streaming-Verlauf importieren<input type="file" accept=".json" multiple hidden onChange={(e) => importHist(e.target.files)} /></label>
+            <p className="hint">{Object.keys(hist).length ? `Verlauf gespeichert (${Object.keys(hist).length} Alben, ${Object.keys(histT).length} Songs).` : "Noch kein Verlauf importiert."} Dateien: Streaming_History_Audio_*.json</p>
           </div>
-          {found.map((a) => (<div className="pick" key={a.id}><span>{a.name}</span><button className="ghost" onClick={() => pick(a)}>Wählen</button></div>))}
-          {plists.map((p) => (<div className="pick" key={p.id}><span>{p.name}<br /><small className="hint">{p.owner}</small></span><button className="ghost" onClick={() => pickPl(p)}>Wählen</button></div>))}
-        </div>
-        <div className="field">
-          <span className="l">Filter und Verlauf</span>
-          {mode !== "playlists" && <input type="text" placeholder="Albumtitel enthält, z. B. Folge" value={filter} onChange={(e) => { setFilter(e.target.value); save("filter", e.target.value); }} />}
-          {mode !== "albums" && <input type="text" placeholder="Songtitel enthält …" value={tfilter} onChange={(e) => { setTfilter(e.target.value); save("tfilter", e.target.value); setShownN(SHOW_STEP); }} />}
-          <label className="file">Streaming-Verlauf importieren<input type="file" accept=".json" multiple hidden onChange={(e) => importHist(e.target.files)} /></label>
-          <p className="hint">{Object.keys(hist).length ? `Verlauf gespeichert (${Object.keys(hist).length} Alben, ${Object.keys(histT).length} Songs).` : "Noch kein Verlauf importiert."} Dateien: Streaming_History_Audio_*.json</p>
-        </div>
-      </section>
-
-      {busy && <p className="hint">Lädt …</p>}
+        </section>
+      )}
       {note && <p className="hint">{note}</p>}
+
+      {flags.length > 0 && (
+        <section className="hero" aria-label="Fortschritt">
+          <div className="ring">
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <circle className="bg" cx="50" cy="50" r="44" fill="none" strokeWidth="9" />
+              <circle className="fg" cx="50" cy="50" r="44" fill="none" strokeWidth="9" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - pct / 100)} />
+            </svg>
+            <b>{pct} %</b>
+          </div>
+          <div className="txt">
+            <b>{flags.length === nHeard ? "Alles gehört" : `Noch ${flags.length - nHeard} ${unit} offen`}</b>
+            <span className="hint">{nHeard} von {flags.length} gehört</span>
+          </div>
+        </section>
+      )}
+
+      {nextItem && (
+        <section className="next" aria-label="Als Nächstes">
+          {nextItem.img ? <img src={nextItem.img} alt="" /> : <span className="ph" />}
+          <div className="info">
+            <small className="hint">Als Nächstes</small>
+            <h2>{nextItem.title}</h2>
+            <small className="hint">{nextItem.sub}</small>
+            <a className="primary" href={nextItem.url} target="_blank" rel="noopener noreferrer" onClick={(e) => openInSpotify(e, nextItem.kind, nextItem.id, nextItem.url)}>Jetzt in Spotify hören</a>
+            <button className="ghost" disabled={pool.length < 2} onClick={() => setNextId(pool[Math.floor(Math.random() * pool.length)].id)}>Zufällige ungehörte {one}</button>
+          </div>
+        </section>
+      )}
 
       {mode === "songs" && series && fAlbums.length > 0 && (
         <div className="bar">
@@ -363,32 +457,34 @@ export default function Home() {
 
       {flags.length > 0 && (
         <>
-          <section className="stats">
-            <span><b>{nHeard}</b> gehört</span>
-            <span><b>{flags.length - nHeard}</b> offen</span>
-            <span><b>{pct} %</b> geschafft</span>
-            <div className="meter"><i style={{ width: pct + "%" }} /></div>
-          </section>
-          <div className="bar" style={{ margin: "10px 0" }}>
+          <div className="filters">
             {(["all", "open", "heard"] as const).map((v) => (
-              <button key={v} className={view === v ? "on" : "ghost"} onClick={() => { setView(v); setShownN(SHOW_STEP); }}>{{ all: "Alle", open: "Nicht gehört", heard: "Gehört" }[v]}</button>
+              <button key={v} aria-pressed={view === v} className={view === v ? "on" : "ghost"} onClick={() => { setView(v); setShownN(SHOW_STEP); }}>{{ all: "Alle", open: "Offen", heard: "Gehört" }[v]}</button>
             ))}
+            <select aria-label="Sortierung" value={sort} onChange={(e) => setSort(e.target.value as "date" | "title" | "last")}>
+              <option value="date">Reihenfolge</option><option value="title">Titel A–Z</option><option value="last">Zuletzt gehört</option>
+            </select>
             {series && mode !== "playlists" && <button className="ghost" onClick={() => fetchAlbums(series.id, true)}>Neu laden</button>}
           </div>
-          <p className="hint">Tipp auf einen Eintrag markiert ihn von Hand als gehört (nochmal tippen hebt es auf).</p>
+          <p className="hint">Tipp auf das Cover markiert von Hand als gehört (nochmal tippen hebt es auf).</p>
         </>
+      )}
+
+      {busy && flags.length === 0 && (
+        <div className="grid">{Array.from({ length: 8 }, (_, i) => (<article key={i} className="card sk"><div className="cover" /><div className="meta"><b>&nbsp;</b><small>&nbsp;</small></div></article>))}</div>
       )}
 
       {mode === "albums" && (
         <div className="grid">
-          {shownA.map(({ a, heard, auto, last, saved: sv }) => (
-            <article key={a.id} className={"card" + (heard ? " is-heard" : "")} onClick={() => !auto && toggle(a.id)}>
-              <div className="cover">
+          {listA.map(({ a, heard, auto, last, saved: sv }) => (
+            <article key={a.id} className={"card" + (heard ? " is-heard" : "")}>
+              <button className="cover" disabled={auto} aria-pressed={heard} aria-label={`${clean(a.name)}: ${heard ? "gehört" : "offen"}`} onClick={() => toggle(a.id)}>
                 {a.img && <img src={a.img} alt="" loading="lazy" />}
                 <span className={"badge " + (heard ? "heard" : "open")}>{heard ? "gehört" : "offen"}</span>
-              </div>
+                {epNum(a.name) && <span className="num">{epNum(a.name)}</span>}
+              </button>
               <div className="meta">
-                <b>{a.name}</b>
+                <b>{clean(a.name)}</b>
                 <small>{last ? "Zuletzt: " + day(last) : sv ? "In Bibliothek gespeichert" : a.date}</small>
               </div>
               <a className="btn" href={a.url} target="_blank" rel="noopener noreferrer" onClick={(e) => openInSpotify(e, "album", a.id, a.url)}>In Spotify öffnen</a>
@@ -399,15 +495,29 @@ export default function Home() {
 
       {mode !== "albums" && (
         <div>
-          {shownT.slice(0, shownN).map(({ t, heard, auto, last }) => (
-            <div key={t.id} className={"trow" + (heard ? " is-heard" : "")} onClick={() => !auto && toggle(t.id)}>
-              {t.img ? <img src={t.img} alt="" loading="lazy" /> : <span className="ph" />}
-              <span className="t"><b>{t.name}</b><small>{t.sub}{last ? " · zuletzt " + day(last) : ""}</small></span>
-              <span className={"badge inline " + (heard ? "heard" : "open")}>{heard ? "gehört" : "offen"}</span>
+          {listT.slice(0, shownN).map(({ t, heard, auto, last }) => (
+            <div key={t.id} className={"trow" + (heard ? " is-heard" : "")}>
+              <button className="tmain" disabled={auto} aria-pressed={heard} onClick={() => toggle(t.id)}>
+                {t.img ? <img src={t.img} alt="" loading="lazy" /> : <span className="ph" />}
+                <span className="t"><b>{t.name}</b><small>{t.sub}{last ? " · zuletzt " + day(last) : ""}</small></span>
+                <span className={"badge inline " + (heard ? "heard" : "open")}>{heard ? "gehört" : "offen"}</span>
+              </button>
               <a className="btn" href={t.url} target="_blank" rel="noopener noreferrer" onClick={(e) => openInSpotify(e, "track", t.id, t.url)}>Öffnen</a>
             </div>
           ))}
-          {shownT.length > shownN && <button className="ghost" onClick={() => setShownN((n) => n + SHOW_STEP)}>Mehr anzeigen ({shownT.length - shownN} weitere)</button>}
+          {listT.length > shownN && <button className="ghost" onClick={() => setShownN((n) => n + SHOW_STEP)}>Mehr anzeigen ({listT.length - shownN} weitere)</button>}
+        </div>
+      )}
+
+      <nav className="tabs" aria-label="Modus">
+        {(["albums", "songs", "playlists"] as const).map((m) => (
+          <button key={m} className={mode === m ? "on" : ""} aria-current={mode === m} onClick={() => changeMode(m)}>{modeName[m]}</button>
+        ))}
+      </nav>
+      {toast && (
+        <div className="toast" role="status">
+          <span>{toast.text}</span>
+          <button onClick={() => { toggle(toast.id, true); setToast(null); }}>Rückgängig</button>
         </div>
       )}
     </main>
