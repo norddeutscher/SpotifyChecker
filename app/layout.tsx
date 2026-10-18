@@ -15,6 +15,7 @@ input[type=text]{width:100%;padding:10px;border:1px solid var(--line);border-rad
 .row img,.row .ph{width:52px;height:52px;border-radius:4px;background:var(--line);flex:none}
 .row .t{flex:1;min-width:0}.row .t b{display:block;font-weight:600}
 .row small{color:var(--mute)}.tag{font-size:.8rem;font-weight:600;white-space:nowrap}
+.side{display:flex;flex-direction:column;align-items:flex-end;gap:6px}.btn{font-size:.8rem;padding:6px 10px;border:1px solid var(--line);border-radius:8px;color:var(--ink);text-decoration:none;white-space:nowrap}
 .heard{color:var(--green)}.open{color:var(--red)}
 .bar{display:flex;gap:8px;margin:12px 0;flex-wrap:wrap}.box{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin:12px 0}
 button:focus-visible,input:focus-visible{outline:2px solid var(--red);outline-offset:2px}

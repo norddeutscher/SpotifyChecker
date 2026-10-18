@@ -157,7 +157,10 @@ export default function Home() {
         <div className="row" key={a.id} onClick={() => !auto && toggle(a.id)}>
           {a.images?.[2] ? <img src={a.images[2].url} alt="" /> : <span className="ph" />}
           <span className="t"><b>{a.name}</b><small>{last ? "Zuletzt: " + new Date(last).toLocaleDateString("de-DE") : sv ? "In Bibliothek gespeichert" : a.release_date}</small></span>
-          <span className={"tag " + (heard ? "heard" : "open")}>{heard ? "gehört" : "offen"}</span>
+          <span className="side">
+            <span className={"tag " + (heard ? "heard" : "open")}>{heard ? "gehört" : "offen"}</span>
+            <a className="btn" href={a.external_urls?.spotify} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>In Spotify öffnen</a>
+          </span>
         </div>
       ))}
       <div className="bar">
